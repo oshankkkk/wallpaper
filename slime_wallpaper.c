@@ -80,7 +80,7 @@
 #define TURNSPEED        0.2f
 #define PI_F             3.14159265358979f
 
-static float speed_mult = 1.0f;
+static float speed_mult = 3.0f;
 static int agents_mult  = 1;     /* agents for a 1200x800 screen ...            */
 /* [CONFIG] Colors are no longer const: slimewallpaper.conf can override them.
  * These are the defaults used when no config file is found.                  */
@@ -320,6 +320,7 @@ static void sim_init(int w, int h){
 		agents[x].x = rand_range(W / 2 - 30, W / 2 + 30);
 		agents[x].y = rand_range(H / 2 - 30, H / 2 + 30);
 		agents[x].speed = 1.0f + hash_rand((unsigned int)x * 747796405u + 2891336453u) *speed_mult;
+		//agents[x].speed = 1.0f + hash_rand((unsigned int)x * 747796405u + 2891336453u) *3.0f;
 		agents[x].colorid = rand_range(0, 1);
 	}
 
