@@ -31,9 +31,23 @@
  *  [CHANGE 6] (Makefile) -march=native so the compiler can use your CPU's
  *             SIMD instructions in the blur loops.
  * ============================================================================
+ *  CONFIG FILE  (search for "[CONFIG")
+ * ============================================================================
+ *  [CONFIG] Colors are read once at startup from slimewallpaper.conf:
+ *               background   (R, G, B)
+ *               agentcolor1  (R, G, B)
+ *               agentcolor2  (R, G, B)
+ *           Search order: 1) path given as first argument,
+ *                         2) ./slimewallpaper.conf,
+ *                         3) $XDG_CONFIG_HOME/slimewallpaper/slimewallpaper.conf
+ *                            (default ~/.config/slimewallpaper/slimewallpaper.conf)
+ *           If no file is found, the built-in defaults below are used.
+ *           Restart the program to apply changes.
+ * ============================================================================
  */
 
 #define _GNU_SOURCE
+#include <ctype.h>
 #include <math.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -57,7 +71,7 @@
  * If your CPU struggles, set it back to 2 (lighter, but chunkier/softer). */
 #define GRIDSIZE         1
 
-#define AGENTS_REF       20000      /* agents for a 1200x800 screen ...            */
+#define AGENTS_REF       2000      /* agents for a 1200x800 screen ...            */
 #define REF_W            1200      /* ... scaled by screen area so density stays  */
 #define REF_H            800       /*     the same on any resolution              */
 #define SENSEDISTANCE    16
@@ -66,11 +80,102 @@
 #define TURNSPEED        0.2f
 #define PI_F             3.14159265358979f
 
-/* Species colors (R, G, B) */
-static const uint8_t colors[2][3] = {
+/* [CONFIG] Colors are no longer const: slimewallpaper.conf can override them.
+ * These are the defaults used when no config file is found.                  */
+#define CONFIG_NAME "slimewallpaper.conf"
+
+static uint8_t bg_color[3] = {   0,   0,   0 };   /* background  */
+static uint8_t colors[2][3] = {                   /* agentcolor1 / agentcolor2 */
 	{  30, 150, 255 },   /* blue */
 	{   0, 255, 255 },   /* cyan */
 };
+
+/* [CONFIG] Pull the first three integers out of a string such as
+ * " (235, 111, 146)". Brackets, commas, '=' and spaces are all just skipped,
+ * so "(1,2,3)", "1 2 3" and "= (1, 2, 3)" all work. Values above 255 are clamped. */
+static bool parse_rgb(const char *s, uint8_t out[3]){
+	int vals[3];
+	int n = 0;
+	while (*s && n < 3){
+		if (isdigit((unsigned char)*s)){
+			char *end;
+			long v = strtol(s, &end, 10);
+			vals[n++] = v > 255 ? 255 : (int)v;
+			s = end;
+		} else {
+			s++;
+		}
+	}
+	if (n < 3) return false;
+	for (int i = 0; i < 3; i++) out[i] = (uint8_t)vals[i];
+	return true;
+}
+
+/* [CONFIG] Read one config file. Returns false only if it can't be opened.
+ * Lines look like:   key (R, G, B)     Everything after '#' or '//' is a comment. */
+static bool load_config(const char *path){
+	FILE *f = fopen(path, "r");
+	if (!f) return false;
+
+	char line[256];
+	int lineno = 0;
+	while (fgets(line, sizeof line, f)){
+		lineno++;
+
+		char *c = strchr(line, '#');   if (c) *c = 0;
+		c = strstr(line, "//");        if (c) *c = 0;
+
+		char *p = line;
+		while (isspace((unsigned char)*p)) p++;
+		if (!*p) continue;                         /* blank / comment-only line */
+
+		/* the key is the leading word, case-insensitive */
+		char key[32];
+		int k = 0;
+		while (*p && (isalnum((unsigned char)*p) || *p == '_') && k < (int)sizeof key - 1)
+			key[k++] = (char)tolower((unsigned char)*p++);
+		key[k] = 0;
+
+		uint8_t rgb[3];
+		if (k == 0 || !parse_rgb(p, rgb)){
+			fprintf(stderr, "%s:%d: expected 'name (R, G, B)', line ignored\n", path, lineno);
+			continue;
+		}
+
+		if      (!strcmp(key, "background"))  memcpy(bg_color,  rgb, 3);
+		else if (!strcmp(key, "agentcolor1")) memcpy(colors[0], rgb, 3);
+		else if (!strcmp(key, "agentcolor2")) memcpy(colors[1], rgb, 3);
+		else fprintf(stderr, "%s:%d: unknown setting '%s', line ignored\n", path, lineno, key);
+	}
+	fclose(f);
+	return true;
+}
+
+/* [CONFIG] Try the locations in the order listed in the header comment. */
+static void find_and_load_config(int argc, char **argv){
+	char path[512] = "";
+
+	if (argc > 1){
+		if (load_config(argv[1])) fprintf(stderr, "config: loaded %s\n", argv[1]);
+		else fprintf(stderr, "config: can't open %s, using default colors\n", argv[1]);
+		return;
+	}
+	if (load_config(CONFIG_NAME)){
+		fprintf(stderr, "config: loaded ./%s\n", CONFIG_NAME);
+		return;
+	}
+
+	const char *xdg  = getenv("XDG_CONFIG_HOME");
+	const char *home = getenv("HOME");
+	if (xdg && *xdg)  snprintf(path, sizeof path, "%s/slimewallpaper/%s", xdg, CONFIG_NAME);
+	else if (home)    snprintf(path, sizeof path, "%s/.config/slimewallpaper/%s", home, CONFIG_NAME);
+
+	if (path[0] && load_config(path)){
+		fprintf(stderr, "config: loaded %s\n", path);
+		return;
+	}
+	fprintf(stderr, "config: no %s found, using default colors\n", CONFIG_NAME);
+}
 
 /* ------------------------------------------------------------------ */
 /* Simulation (ported from your example2, raylib removed)              */
@@ -137,12 +242,18 @@ static void sim_init(int w, int h){
 	species    = calloc((size_t)GW * GH, 1);
 	hsum       = calloc((size_t)GW * GH, sizeof(uint16_t));
 
-	/* [CHANGE 4] precompute every possible pixel color once */
+	/* [CHANGE 4] precompute every possible pixel color once.
+	 * [CONFIG] Each entry now fades from the background color (intensity 0) to
+	 * the agent color (intensity 255): bg + (agent - bg) * a / 255, per channel.
+	 * With the old black background this is the same as agent * a / 255.       */
 	for (int s = 0; s < 2; s++){
 		for (int a = 0; a < 256; a++){
-			lut[s][a] = ((uint32_t)(colors[s][0] * a / 255) << 16) |
-			            ((uint32_t)(colors[s][1] * a / 255) << 8)  |
-			             (uint32_t)(colors[s][2] * a / 255);
+			uint32_t px = 0;
+			for (int ch = 0; ch < 3; ch++){
+				int v = bg_color[ch] + ((int)colors[s][ch] - (int)bg_color[ch]) * a / 255;
+				px = (px << 8) | (uint32_t)v;
+			}
+			lut[s][a] = px;     /* XRGB8888: 0x00RRGGBB */
 		}
 	}
 
@@ -458,7 +569,9 @@ static const struct wl_registry_listener registry_listener = {
 	.global_remove = registry_remove,
 };
 
-int main(void){
+int main(int argc, char **argv){
+	find_and_load_config(argc, argv);   /* [CONFIG] must run before the first configure -> sim_init() */
+
 	display = wl_display_connect(NULL);
 	if (!display){
 		fprintf(stderr, "Can't connect to a Wayland compositor (is WAYLAND_DISPLAY set?)\n");
