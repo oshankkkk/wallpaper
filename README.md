@@ -1,5 +1,7 @@
 # Slimesim wallpaper
 
+https://github.com/user-attachments/assets/9deeafb8-a16d-4024-9257-4f800e130e4a
+
 Physarum polycephalum simulation running as a live Wayland wallpaper. Thousands of agents create and follow glowing trails, forming evolving networks across the desktop. Built in a single C file without a game library, rendering directly through Wayland at native resolution.
 
 ## Requirements
