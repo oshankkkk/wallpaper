@@ -319,8 +319,7 @@ static void sim_init(int w, int h){
 		agents[x].angle = (2.0f * PI_F * x) / agent_count;
 		agents[x].x = rand_range(W / 2 - 30, W / 2 + 30);
 		agents[x].y = rand_range(H / 2 - 30, H / 2 + 30);
-		agents[x].speed = 1.0f + hash_rand((unsigned int)x * 747796405u + 2891336453u) *speed_mult;
-		//agents[x].speed = 1.0f + hash_rand((unsigned int)x * 747796405u + 2891336453u) *3.0f;
+		agents[x].speed = 3.0f + hash_rand((unsigned int)x * 747796405u + 2891336453u) *speed_mult;
 		agents[x].colorid = rand_range(0, 1);
 	}
 
