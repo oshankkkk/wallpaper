@@ -71,7 +71,7 @@
  * If your CPU struggles, set it back to 2 (lighter, but chunkier/softer). */
 #define GRIDSIZE         1
 
-#define AGENTS_REF       2000      /* agents for a 1200x800 screen ...            */
+#define AGENTS_REF       5000      /* agents for a 1200x800 screen ...            */
 #define REF_W            1200      /* ... scaled by screen area so density stays  */
 #define REF_H            800       /*     the same on any resolution              */
 #define SENSEDISTANCE    16
@@ -80,12 +80,15 @@
 #define TURNSPEED        0.2f
 #define PI_F             3.14159265358979f
 
+static float speed_mult = 1.0f;
+static int agents_mult  = 1;     /* agents for a 1200x800 screen ...            */
 /* [CONFIG] Colors are no longer const: slimewallpaper.conf can override them.
  * These are the defaults used when no config file is found.                  */
 #define CONFIG_NAME "slimewallpaper.conf"
 
 static uint8_t bg_color[3] = {   0,   0,   0 };   /* background  */
 static uint8_t colors[2][3] = {                   /* agentcolor1 / agentcolor2 */
+	//default colors
 	{  30, 150, 255 },   /* blue */
 	{   0, 255, 255 },   /* cyan */
 };
@@ -110,6 +113,33 @@ static bool parse_rgb(const char *s, uint8_t out[3]){
 	for (int i = 0; i < 3; i++) out[i] = (uint8_t)vals[i];
 	return true;
 }
+
+/* [CONFIG] Read one number out of a string such as "  2.5" or " = (2.5)". */
+static bool parse_int(const char *s, int *out){
+	while (*s && !isdigit((unsigned char)*s) && *s != '.' && *s != '-') s++;
+	if (!*s) return false;
+
+	char *end;
+    long v = strtol(s, &end, 10);
+
+    if (end == s) return false;
+    if (*end == '.') return false;
+    //if (v < INT_MIN || v > INT_MAX) return false;
+    *out = (int)v;
+    return true;
+}
+
+/* [CONFIG] Read one number out of a string such as "  2.5" or " = (2.5)". */
+static bool parse_float(const char *s, float *out){
+	while (*s && !isdigit((unsigned char)*s) && *s != '.' && *s != '-') s++;
+	if (!*s) return false;
+	char *end;
+	double v = strtod(s, &end);
+	if (end == s || !isfinite(v)) return false;
+	*out = (float)v;
+	return true;
+}
+
 
 /* [CONFIG] Read one config file. Returns false only if it can't be opened.
  * Lines look like:   key (R, G, B)     Everything after '#' or '//' is a comment. */
@@ -136,6 +166,28 @@ static bool load_config(const char *path){
 			key[k++] = (char)tolower((unsigned char)*p++);
 		key[k] = 0;
 
+		/* [CONFIG] "speed" takes one number; every other key takes (R, G, B) */
+		if (!strcmp(key, "speed")){
+			float v;
+			if (!parse_float(p, &v)){
+				fprintf(stderr, "%s:%d: expected 'speed <number>', line ignored\n", path, lineno);
+				continue;
+			}
+
+			speed_mult = v;
+			continue;
+		}
+ 		if (!strcmp(key, "agentcount")){
+			int ag;
+			if (!parse_int(p, &ag)){
+				fprintf(stderr, "%s:%d: expected 'agentcount <number>', line ignored\n", path, lineno);
+				continue;
+			}
+
+			agents_mult = ag;
+			continue;
+		}
+
 		uint8_t rgb[3];
 		if (k == 0 || !parse_rgb(p, rgb)){
 			fprintf(stderr, "%s:%d: expected 'name (R, G, B)', line ignored\n", path, lineno);
@@ -144,6 +196,7 @@ static bool load_config(const char *path){
 
 		if      (!strcmp(key, "background"))  memcpy(bg_color,  rgb, 3);
 		else if (!strcmp(key, "agentcolor1")) memcpy(colors[0], rgb, 3);
+		else if (!strcmp(key, "agentcolor2")) memcpy(colors[1], rgb, 3);
 		else if (!strcmp(key, "agentcolor2")) memcpy(colors[1], rgb, 3);
 		else fprintf(stderr, "%s:%d: unknown setting '%s', line ignored\n", path, lineno, key);
 	}
@@ -257,7 +310,7 @@ static void sim_init(int w, int h){
 		}
 	}
 
-	agent_count = (int)((float)AGENTS_REF * ((float)W * H) / ((float)REF_W * REF_H));
+	agent_count = (int)((float)(AGENTS_REF * agents_mult)*((float)W * H) / ((float)REF_W * REF_H));
 	if (agent_count < 500) agent_count = 500;
 	agents = calloc(agent_count, sizeof(Agent));
 
@@ -266,9 +319,10 @@ static void sim_init(int w, int h){
 		agents[x].angle = (2.0f * PI_F * x) / agent_count;
 		agents[x].x = rand_range(W / 2 - 30, W / 2 + 30);
 		agents[x].y = rand_range(H / 2 - 30, H / 2 + 30);
-		agents[x].speed = 3.0f + hash_rand((unsigned int)x * 747796405u + 2891336453u) * 3.0f;
+		agents[x].speed = 1.0f + hash_rand((unsigned int)x * 747796405u + 2891336453u) *speed_mult;
 		agents[x].colorid = rand_range(0, 1);
 	}
+
 }
 
 static float sense(float angle, const Agent *agent){
