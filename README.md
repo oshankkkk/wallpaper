@@ -1,6 +1,6 @@
 # Slimesim wallpaper
 
-Physarum polycephalum (slime mold) simulation that runs as a live wallpaper on Wayland.Thousands of tiny agents leave glowing trails, follow each other's trails, and slowly grow a living network across your desktop. It is a single C file with no game library. It talks to the compositor directly and draws behind all your windows at your screen's native resolution.
+Physarum polycephalum simulation running as a live Wayland wallpaper. Thousands of agents create and follow glowing trails, forming evolving networks across the desktop. Built in a single C file without a game library, rendering directly through Wayland at native resolution.
 
 ## Requirements
 
@@ -158,4 +158,5 @@ well inside the 16.7 ms budget for 60 FPS.
 
 
 > See https://github.com/oshankkkk/slimesim for the simulation details
+
 
